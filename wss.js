@@ -1,7 +1,9 @@
 const WebSocket = require('ws');
-const wss = new WebSocket.Server({ port: process.env.WS_PORT || 8080 });
+const port = process.env.WS_PORT || 8080;
 
-console.log(`✅ WebSocket rodando na porta ${process.env.WS_PORT || 8080}`);
+const wss = new WebSocket.Server({ port: port, host: '0.0.0.0' });
+
+console.log(`✅ WebSocket rodando na porta ${port}`);
 
 let clients = [];
 
@@ -28,7 +30,7 @@ function sendSpotting(data) {
     });
 }
 
-// Simular brainrots (opcional)
+// Simular brainrots
 setInterval(() => {
     const brainrots = ["Strawberry Elephant", "Headless Horseman", "Meowl", "Skibidi Toilet", "John Pork"];
     const random = brainrots[Math.floor(Math.random() * brainrots.length)];
