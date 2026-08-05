@@ -73,6 +73,7 @@ function sendSpotting(data) {
     });
 }
 
+// ============ INICIAR SERVIDOR ============
 app.listen(port, () => {
     console.log(`✅ Servidor rodando na porta ${port}`);
 });
