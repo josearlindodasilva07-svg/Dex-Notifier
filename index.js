@@ -1,4 +1,5 @@
 const express = require('express');
+const WebSocket = require('ws');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -48,6 +49,16 @@ app.post('/logs', (req, res) => {
     res.send('OK');
 });
 
-app.listen(port, '0.0.0.0', () => {
-    console.log(`✅ Servidor HTTP rodando na porta ${port}`);
+// WEBSOCKET NA MESMA PORTA
+const server = app.listen(port, '0.0.0.0', () => {
+    console.log(`✅ Servidor rodando na porta ${port}`);
 });
+
+const wss = new WebSocket.Server({ server });
+
+wss.on('connection', (ws) => {
+    console.log('✅ Cliente conectado');
+    clients.push(ws);
+});
+
+let clients = [];
