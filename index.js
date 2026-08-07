@@ -1,83 +1,152 @@
 const express = require('express');
-const WebSocket = require('ws');
+const fs = require('fs');
+const crypto = require('crypto');
 const app = express();
-const port = process.env.PORT || 3000;
+app.use(express.json());
 
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    next();
-});
+const KEYS_FILE = 'keys.json';
+const BANNED_FILE = 'banned.json';
 
-app.use(express.text());
+let keys = {};
+let banned = {};
 
-let activeUsers = {};
-const blacklisted = [];
-let currentAnnouncement = "";
-let clients = [];
-
-app.get('/secure', (req, res) => {
-    res.json({ wss: `wss://${req.get('host')}` });
-});
-
-app.get('/usernames', (req, res) => {
-    res.send(Object.keys(activeUsers).join('\n'));
-});
-
-app.post('/usernames', (req, res) => {
-    if (req.body && req.body !== '') {
-        activeUsers[req.body] = Date.now();
-    }
-    res.send('OK');
-});
-
-app.get('/blacklisted', (req, res) => {
-    res.send(blacklisted.join('\n'));
-});
-
-app.get('/announcements', (req, res) => {
-    res.send(currentAnnouncement);
-});
-
-app.post('/announcements', (req, res) => {
-    if (req.body) currentAnnouncement = req.body;
-    res.send('OK');
-});
-
-app.post('/logs', (req, res) => {
-    console.log('[LOG]', req.body);
-    clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(req.body);
+function loadData() {
+    try {
+        if (fs.existsSync(KEYS_FILE)) {
+            keys = JSON.parse(fs.readFileSync(KEYS_FILE));
         }
-    });
-    res.send('OK');
-});
-
-const server = app.listen(port, '0.0.0.0', () => {
-    console.log(`✅ Servidor rodando na porta ${port}`);
-});
-
-const wss = new WebSocket.Server({ server });
-
-wss.on('connection', (ws) => {
-    console.log('✅ Cliente conectado');
-    clients.push(ws);
+    } catch (e) { keys = {}; }
     
-    ws.on('close', () => {
-        clients = clients.filter(client => client !== ws);
-        console.log('❌ Cliente desconectado');
-    });
+    try {
+        if (fs.existsSync(BANNED_FILE)) {
+            banned = JSON.parse(fs.readFileSync(BANNED_FILE));
+        }
+    } catch (e) { banned = {}; }
+}
+
+function saveKeys() {
+    fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2));
+}
+
+function saveBanned() {
+    fs.writeFileSync(BANNED_FILE, JSON.stringify(banned, null, 2));
+}
+
+loadData();
+
+app.post('/verify-key', (req, res) => {
+    const { key, username, hwid } = req.body;
     
-    ws.on('message', (message) => {
-        console.log('[WS] 📩', message.toString());
-        clients.forEach(client => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-                client.send(message.toString());
-            }
-        });
+    if (!keys[key]) {
+        return res.json({ success: false, message: 'Key inválida' });
+    }
+    
+    if (banned[key]) {
+        return res.json({ success: false, message: 'Key banida', banned: true });
+    }
+    
+    if (keys[key].expires < Date.now()) {
+        return res.json({ success: false, message: 'Key expirada', expired: true });
+    }
+    
+    if (keys[key].usedBy && keys[key].usedBy !== username) {
+        return res.json({ success: false, message: 'Key em uso' });
+    }
+    
+    if (keys[key].hwid && keys[key].hwid !== hwid) {
+        return res.json({ success: false, message: 'Key em outro dispositivo' });
+    }
+    
+    keys[key].usedBy = username;
+    keys[key].usedAt = Date.now();
+    keys[key].hwid = hwid;
+    saveKeys();
+    
+    const daysLeft = Math.floor((keys[key].expires - Date.now()) / (24 * 60 * 60 * 1000));
+    
+    res.json({ 
+        success: true,
+        daysLeft: daysLeft,
+        expires: keys[key].expires
     });
 });
 
-console.log(`✅ WebSocket rodando na porta ${port}`);
+app.post('/generate-key', (req, res) => {
+    const { adminKey, days } = req.body;
+    
+    if (adminKey !== 'ADMIN_123') {
+        return res.json({ success: false });
+    }
+    
+    const duration = days || 30;
+    const key = crypto.randomBytes(16).toString('hex').toUpperCase();
+    
+    keys[key] = {
+        key: key,
+        created: Date.now(),
+        expires: Date.now() + (duration * 24 * 60 * 60 * 1000),
+        durationDays: duration,
+        usedBy: null,
+        usedAt: null,
+        hwid: null
+    };
+    
+    saveKeys();
+    
+    res.json({ 
+        success: true, 
+        key: key,
+        days: duration
+    });
+});
+
+app.post('/ban-key', (req, res) => {
+    const { adminKey, key } = req.body;
+    
+    if (adminKey !== 'ADMIN_123') {
+        return res.json({ success: false });
+    }
+    
+    if (!keys[key]) {
+        return res.json({ success: false });
+    }
+    
+    banned[key] = {
+        bannedAt: Date.now(),
+        usedBy: keys[key].usedBy || 'Nunca usada'
+    };
+    
+    saveBanned();
+    res.json({ success: true });
+});
+
+app.post('/renew-key', (req, res) => {
+    const { adminKey, key, extraDays } = req.body;
+    
+    if (adminKey !== 'ADMIN_123') {
+        return res.json({ success: false });
+    }
+    
+    if (!keys[key]) {
+        return res.json({ success: false });
+    }
+    
+    const days = extraDays || 30;
+    const now = Date.now();
+    
+    if (keys[key].expires < now) {
+        keys[key].expires = now + (days * 24 * 60 * 60 * 1000);
+    } else {
+        keys[key].expires = keys[key].expires + (days * 24 * 60 * 60 * 1000);
+    }
+    
+    keys[key].durationDays = keys[key].durationDays + days;
+    saveKeys();
+    
+    res.json({ success: true });
+});
+
+app.listen(3000, () => {
+    console.log('🚀 Servidor rodando na porta 3000');
+    console.log('📊 Total de keys: ' + Object.keys(keys).length);
+});
