@@ -38,7 +38,7 @@ const blacklistedNames = [
     // ============================================
     // COLOQUE AQUI OS NOMES DOS JOGADORES BANIDOS
     // ============================================
-    "Dark_Hacker_X",
+    "brainrot_21599",
     "Troll_Master_BR",
     "Exploit_King_77",
     "Script_Kid_2024",
