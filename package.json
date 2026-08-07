@@ -1,13 +1,17 @@
 {
-  "name": "vex-notifier-server",
+  "name": "dex-notifier",
   "version": "2.0.0",
-  "description": "VEX Notifier Server with Blacklist by ID + Name + IP",
+  "description": "Dex Notifier Server with Blacklist Support",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "ws": "^8.13.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   }
 }
