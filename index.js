@@ -1,152 +1,251 @@
 const express = require('express');
 const fs = require('fs');
-const crypto = require('crypto');
 const app = express();
 app.use(express.json());
 
-const KEYS_FILE = 'keys.json';
-const BANNED_FILE = 'banned.json';
-
-let keys = {};
-let banned = {};
-
-function loadData() {
+// ============================================
+// CARREGA OS ARQUIVOS
+// ============================================
+function loadJSON(file) {
     try {
-        if (fs.existsSync(KEYS_FILE)) {
-            keys = JSON.parse(fs.readFileSync(KEYS_FILE));
+        if (fs.existsSync(file)) {
+            return JSON.parse(fs.readFileSync(file));
         }
-    } catch (e) { keys = {}; }
+    } catch (e) {}
+    return {};
+}
+
+function saveJSON(file, data) {
+    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+// CRIA OS ARQUIVOS SE NÃO EXISTIREM
+if (!fs.existsSync('keys.json')) {
+    saveJSON('keys.json', {});
+}
+
+if (!fs.existsSync('config.json')) {
+    saveJSON('config.json', {
+        adminKey: 'ADMIN2024',
+        adminKeyActive: true
+    });
+}
+
+let keys = loadJSON('keys.json');
+let config = loadJSON('config.json');
+
+// ============================================
+// ROTA: VERIFICAR KEY (USUÁRIO USA)
+// ============================================
+app.post('/verify', (req, res) => {
+    const { key, username } = req.body;
+    const cleanKey = key.toUpperCase().trim();
     
-    try {
-        if (fs.existsSync(BANNED_FILE)) {
-            banned = JSON.parse(fs.readFileSync(BANNED_FILE));
+    // 1º - VERIFICA SE É A KEY ADM
+    if (cleanKey === config.adminKey) {
+        if (!config.adminKeyActive) {
+            return res.json({ success: false, message: 'Sistema desativado' });
         }
-    } catch (e) { banned = {}; }
-}
-
-function saveKeys() {
-    fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2));
-}
-
-function saveBanned() {
-    fs.writeFileSync(BANNED_FILE, JSON.stringify(banned, null, 2));
-}
-
-loadData();
-
-app.post('/verify-key', (req, res) => {
-    const { key, username, hwid } = req.body;
+        return res.json({ success: true, message: 'Admin Key - Sempre ativa!' });
+    }
     
-    if (!keys[key]) {
+    // 2º - VERIFICA SE A KEY EXISTE
+    if (!keys[cleanKey]) {
         return res.json({ success: false, message: 'Key inválida' });
     }
     
-    if (banned[key]) {
-        return res.json({ success: false, message: 'Key banida', banned: true });
+    const keyData = keys[cleanKey];
+    
+    // 3º - VERIFICA SE ESTÁ BANIDA
+    if (keyData.banido) {
+        return res.json({ success: false, message: 'Key banida' });
     }
     
-    if (keys[key].expires < Date.now()) {
-        return res.json({ success: false, message: 'Key expirada', expired: true });
+    // 4º - VERIFICA SE EXPIROU
+    if (keyData.expiracao) {
+        const expires = new Date(keyData.expiracao);
+        if (expires < new Date()) {
+            return res.json({ success: false, message: 'Key expirada' });
+        }
     }
     
-    if (keys[key].usedBy && keys[key].usedBy !== username) {
-        return res.json({ success: false, message: 'Key em uso' });
+    // 5º - VERIFICA SE O USUÁRIO É O VINCULADO
+    if (keyData.usuarioVinculado) {
+        if (keyData.usuarioVinculado !== username) {
+            // BANE A KEY AUTOMATICAMENTE
+            keyData.banido = true;
+            keyData.banidoEm = new Date().toLocaleString();
+            saveJSON('keys.json', keys);
+            return res.json({ 
+                success: false, 
+                message: `Key banida! Esta key pertence a ${keyData.usuarioVinculado}`
+            });
+        }
     }
     
-    if (keys[key].hwid && keys[key].hwid !== hwid) {
-        return res.json({ success: false, message: 'Key em outro dispositivo' });
+    // 6º - VERIFICA SE JÁ ESTÁ EM USO
+    if (keyData.usadoPor && keyData.usadoPor !== username) {
+        keyData.banido = true;
+        keyData.banidoEm = new Date().toLocaleString();
+        saveJSON('keys.json', keys);
+        return res.json({ success: false, message: 'Key banida! Já foi usada por outro' });
     }
     
-    keys[key].usedBy = username;
-    keys[key].usedAt = Date.now();
-    keys[key].hwid = hwid;
-    saveKeys();
+    // 7º - ATUALIZA USO
+    keyData.usadoPor = username;
+    keyData.usadoEm = new Date().toLocaleString();
+    saveJSON('keys.json', keys);
     
-    const daysLeft = Math.floor((keys[key].expires - Date.now()) / (24 * 60 * 60 * 1000));
-    
-    res.json({ 
-        success: true,
-        daysLeft: daysLeft,
-        expires: keys[key].expires
-    });
+    res.json({ success: true, message: 'Key válida!' });
 });
 
-app.post('/generate-key', (req, res) => {
-    const { adminKey, days } = req.body;
+// ============================================
+// ROTA: CRIAR KEY (VOCÊ USA NO POSTMAN)
+// ============================================
+app.post('/create-key', (req, res) => {
+    const { adminKey, key, days, usuario } = req.body;
+    const cleanKey = key.toUpperCase().trim();
     
-    if (adminKey !== 'ADMIN_123') {
-        return res.json({ success: false });
+    if (adminKey !== config.adminKey) {
+        return res.json({ success: false, message: 'Admin key inválida' });
     }
     
-    const duration = days || 30;
-    const key = crypto.randomBytes(16).toString('hex').toUpperCase();
+    if (keys[cleanKey]) {
+        return res.json({ success: false, message: 'Key já existe!' });
+    }
     
-    keys[key] = {
-        key: key,
-        created: Date.now(),
-        expires: Date.now() + (duration * 24 * 60 * 60 * 1000),
-        durationDays: duration,
-        usedBy: null,
-        usedAt: null,
-        hwid: null
+    const now = new Date();
+    const expires = new Date(now);
+    expires.setDate(expires.getDate() + (days || 30));
+    
+    keys[cleanKey] = {
+        criado: now.toLocaleString(),
+        expiracao: expires.toLocaleString(),
+        dias: days || 30,
+        usuarioVinculado: usuario || null,
+        usadoPor: null,
+        usadoEm: null,
+        banido: false,
+        banidoEm: null
     };
     
-    saveKeys();
-    
+    saveJSON('keys.json', keys);
     res.json({ 
         success: true, 
-        key: key,
-        days: duration
+        message: `Key ${cleanKey} criada!`,
+        key: cleanKey 
     });
 });
 
+// ============================================
+// ROTA: LISTAR KEYS (VOCÊ USA NO POSTMAN)
+// ============================================
+app.post('/list-keys', (req, res) => {
+    const { adminKey } = req.body;
+    
+    if (adminKey !== config.adminKey) {
+        return res.json({ success: false, message: 'Admin key inválida' });
+    }
+    
+    const list = {};
+    for (const [k, v] of Object.entries(keys)) {
+        const exp = new Date(v.expiracao);
+        const now = new Date();
+        const daysLeft = Math.floor((exp - now) / (1000 * 60 * 60 * 24));
+        
+        list[k] = {
+            key: k,
+            status: v.banido ? 'BANIDA' : (daysLeft < 0 ? 'EXPIRADA' : 'ATIVA'),
+            usuarioVinculado: v.usuarioVinculado || 'Livre',
+            usadoPor: v.usadoPor || 'Nunca usado',
+            expira: v.expiracao,
+            diasRestantes: daysLeft
+        };
+    }
+    
+    res.json({ success: true, keys: list });
+});
+
+// ============================================
+// ROTA: BANIR KEY (VOCÊ USA NO POSTMAN)
+// ============================================
 app.post('/ban-key', (req, res) => {
     const { adminKey, key } = req.body;
+    const cleanKey = key.toUpperCase().trim();
     
-    if (adminKey !== 'ADMIN_123') {
-        return res.json({ success: false });
+    if (adminKey !== config.adminKey) {
+        return res.json({ success: false, message: 'Admin key inválida' });
     }
     
-    if (!keys[key]) {
-        return res.json({ success: false });
+    if (!keys[cleanKey]) {
+        return res.json({ success: false, message: 'Key não encontrada' });
     }
     
-    banned[key] = {
-        bannedAt: Date.now(),
-        usedBy: keys[key].usedBy || 'Nunca usada'
-    };
-    
-    saveBanned();
-    res.json({ success: true });
+    keys[cleanKey].banido = true;
+    keys[cleanKey].banidoEm = new Date().toLocaleString();
+    saveJSON('keys.json', keys);
+    res.json({ success: true, message: `Key ${cleanKey} banida!` });
 });
 
-app.post('/renew-key', (req, res) => {
-    const { adminKey, key, extraDays } = req.body;
+// ============================================
+// ROTA: DESBANIR KEY (VOCÊ USA NO POSTMAN)
+// ============================================
+app.post('/unban-key', (req, res) => {
+    const { adminKey, key } = req.body;
+    const cleanKey = key.toUpperCase().trim();
     
-    if (adminKey !== 'ADMIN_123') {
-        return res.json({ success: false });
+    if (adminKey !== config.adminKey) {
+        return res.json({ success: false, message: 'Admin key inválida' });
     }
     
-    if (!keys[key]) {
-        return res.json({ success: false });
+    if (!keys[cleanKey]) {
+        return res.json({ success: false, message: 'Key não encontrada' });
     }
     
-    const days = extraDays || 30;
-    const now = Date.now();
-    
-    if (keys[key].expires < now) {
-        keys[key].expires = now + (days * 24 * 60 * 60 * 1000);
-    } else {
-        keys[key].expires = keys[key].expires + (days * 24 * 60 * 60 * 1000);
-    }
-    
-    keys[key].durationDays = keys[key].durationDays + days;
-    saveKeys();
-    
-    res.json({ success: true });
+    keys[cleanKey].banido = false;
+    keys[cleanKey].banidoEm = null;
+    saveJSON('keys.json', keys);
+    res.json({ success: true, message: `Key ${cleanKey} desbanida!` });
 });
 
-app.listen(3000, () => {
-    console.log('🚀 Servidor rodando na porta 3000');
+// ============================================
+// ROTA: DESATIVAR KEY ADM (SE VAZAR)
+// ============================================
+app.post('/disable-admin', (req, res) => {
+    const { adminKey } = req.body;
+    
+    if (adminKey !== config.adminKey) {
+        return res.json({ success: false, message: 'Admin key inválida' });
+    }
+    
+    config.adminKeyActive = false;
+    saveJSON('config.json', config);
+    res.json({ success: true, message: 'Admin Key desativada!' });
+});
+
+// ============================================
+// ROTA: CRIAR NOVA KEY ADM
+// ============================================
+app.post('/new-admin', (req, res) => {
+    const { adminKey, newAdminKey } = req.body;
+    
+    if (adminKey !== config.adminKey) {
+        return res.json({ success: false, message: 'Admin key inválida' });
+    }
+    
+    config.adminKey = newAdminKey.toUpperCase().trim();
+    config.adminKeyActive = true;
+    saveJSON('config.json', config);
+    res.json({ success: true, message: 'Nova Admin Key criada!', adminKey: config.adminKey });
+});
+
+// ============================================
+// INICIA O SERVIDOR
+// ============================================
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log('\n🚀 Servidor rodando na porta ' + PORT);
+    console.log('👑 Admin Key: ' + config.adminKey);
     console.log('📊 Total de keys: ' + Object.keys(keys).length);
+    console.log('📌 Admin ativa: ' + (config.adminKeyActive ? 'SIM' : 'NÃO'));
 });
