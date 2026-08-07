@@ -3,6 +3,9 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
+// ============================================
+// CARREGA OS ARQUIVOS
+// ============================================
 function loadJSON(file) {
     try {
         if (fs.existsSync(file)) {
@@ -16,13 +19,14 @@ function saveJSON(file, data) {
     fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
+// CRIA OS ARQUIVOS SE NÃO EXISTIREM
 if (!fs.existsSync('keys.json')) {
     saveJSON('keys.json', {});
 }
 
 if (!fs.existsSync('config.json')) {
     saveJSON('config.json', {
-        adminKey: 'ADMIN2024',
+        adminKey: 'GODENOTKEY1',
         adminKeyActive: true
     });
 }
@@ -30,7 +34,9 @@ if (!fs.existsSync('config.json')) {
 let keys = loadJSON('keys.json');
 let config = loadJSON('config.json');
 
-// VERIFICAR KEY
+// ============================================
+// ROTA: VERIFICAR KEY (USUÁRIO USA)
+// ============================================
 app.post('/verify', (req, res) => {
     const { key, username } = req.body;
     const cleanKey = key.toUpperCase().trim();
@@ -85,7 +91,9 @@ app.post('/verify', (req, res) => {
     res.json({ success: true, message: 'Key válida!' });
 });
 
-// CRIAR KEY
+// ============================================
+// ROTA: CRIAR KEY (ADMIN)
+// ============================================
 app.post('/create-key', (req, res) => {
     const { adminKey, key, days, usuario } = req.body;
     const cleanKey = key.toUpperCase().trim();
@@ -121,7 +129,9 @@ app.post('/create-key', (req, res) => {
     });
 });
 
-// LISTAR KEYS
+// ============================================
+// ROTA: LISTAR KEYS (ADMIN)
+// ============================================
 app.post('/list-keys', (req, res) => {
     const { adminKey } = req.body;
     
@@ -148,7 +158,9 @@ app.post('/list-keys', (req, res) => {
     res.json({ success: true, keys: list });
 });
 
-// BANIR KEY
+// ============================================
+// ROTA: BANIR KEY (ADMIN)
+// ============================================
 app.post('/ban-key', (req, res) => {
     const { adminKey, key } = req.body;
     const cleanKey = key.toUpperCase().trim();
@@ -167,7 +179,9 @@ app.post('/ban-key', (req, res) => {
     res.json({ success: true, message: `Key ${cleanKey} banida!` });
 });
 
-// DESBANIR KEY
+// ============================================
+// ROTA: DESBANIR KEY (ADMIN)
+// ============================================
 app.post('/unban-key', (req, res) => {
     const { adminKey, key } = req.body;
     const cleanKey = key.toUpperCase().trim();
@@ -186,7 +200,9 @@ app.post('/unban-key', (req, res) => {
     res.json({ success: true, message: `Key ${cleanKey} desbanida!` });
 });
 
-// RENOVAR KEY
+// ============================================
+// ROTA: RENOVAR KEY (ADMIN)
+// ============================================
 app.post('/renew-key', (req, res) => {
     const { adminKey, key, extraDays } = req.body;
     const cleanKey = key.toUpperCase().trim();
@@ -218,7 +234,9 @@ app.post('/renew-key', (req, res) => {
     res.json({ success: true, message: `Key renovada! +${days} dias` });
 });
 
-// DESATIVAR KEY ADM
+// ============================================
+// ROTA: DESATIVAR KEY ADM (ADMIN)
+// ============================================
 app.post('/disable-admin', (req, res) => {
     const { adminKey } = req.body;
     
@@ -231,7 +249,9 @@ app.post('/disable-admin', (req, res) => {
     res.json({ success: true, message: 'Admin Key desativada!' });
 });
 
-// CRIAR NOVA KEY ADM
+// ============================================
+// ROTA: CRIAR NOVA KEY ADM (ADMIN)
+// ============================================
 app.post('/new-admin', (req, res) => {
     const { adminKey, newAdminKey } = req.body;
     
@@ -243,6 +263,21 @@ app.post('/new-admin', (req, res) => {
     config.adminKeyActive = true;
     saveJSON('config.json', config);
     res.json({ success: true, message: 'Nova Admin Key criada!', adminKey: config.adminKey });
+});
+
+// ============================================
+// ROTA: ATIVAR KEY ADM (ADMIN)
+// ============================================
+app.post('/enable-admin', (req, res) => {
+    const { adminKey } = req.body;
+    
+    if (adminKey !== config.adminKey) {
+        return res.json({ success: false, message: 'Admin key inválida' });
+    }
+    
+    config.adminKeyActive = true;
+    saveJSON('config.json', config);
+    res.json({ success: true, message: 'Admin Key reativada!' });
 });
 
 // ============================================
