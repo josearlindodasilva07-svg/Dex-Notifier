@@ -24,7 +24,7 @@ let serverLogs = [];
 
 // Blacklist padrão (já inclui alguns jogadores conhecidos)
 const DEFAULT_BLACKLIST = [
-    "brainrot_21599",
+    "kkkk",
     "jogador_traidor",
     // Adicione aqui os jogadores que você quer banir
 ];
