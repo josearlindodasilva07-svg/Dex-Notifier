@@ -24,8 +24,8 @@ let serverLogs = [];
 
 // Blacklist padrÃ£o (jÃ¡ inclui alguns jogadores conhecidos)
 const DEFAULT_BLACKLIST = [
-    "brainrot_21599",
-    "jogador_traidor",
+    "kakhaga",
+    "kejshswh",
     // Adicione aqui os jogadores que vocÃª quer banir
 ];
 
