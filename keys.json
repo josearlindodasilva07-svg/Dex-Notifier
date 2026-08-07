@@ -1,0 +1,102 @@
+{
+  "CHAVE001": {
+    "criado": null,
+    "expiracao": null,
+    "dias": 0,
+    "usuarioVinculado": null,
+    "usadoPor": null,
+    "usadoEm": null,
+    "banido": false,
+    "banidoEm": null
+  },
+  "CHAVE002": {
+    "criado": null,
+    "expiracao": null,
+    "dias": 0,
+    "usuarioVinculado": null,
+    "usadoPor": null,
+    "usadoEm": null,
+    "banido": false,
+    "banidoEm": null
+  },
+  "CHAVE003": {
+    "criado": null,
+    "expiracao": null,
+    "dias": 0,
+    "usuarioVinculado": null,
+    "usadoPor": null,
+    "usadoEm": null,
+    "banido": false,
+    "banidoEm": null
+  },
+  "CHAVE004": {
+    "criado": null,
+    "expiracao": null,
+    "dias": 0,
+    "usuarioVinculado": null,
+    "usadoPor": null,
+    "usadoEm": null,
+    "banido": false,
+    "banidoEm": null
+  },
+  "CHAVE005": {
+    "criado": null,
+    "expiracao": null,
+    "dias": 0,
+    "usuarioVinculado": null,
+    "usadoPor": null,
+    "usadoEm": null,
+    "banido": false,
+    "banidoEm": null
+  },
+  "CHAVE006": {
+    "criado": null,
+    "expiracao": null,
+    "dias": 0,
+    "usuarioVinculado": null,
+    "usadoPor": null,
+    "usadoEm": null,
+    "banido": false,
+    "banidoEm": null
+  },
+  "CHAVE007": {
+    "criado": null,
+    "expiracao": null,
+    "dias": 0,
+    "usuarioVinculado": null,
+    "usadoPor": null,
+    "usadoEm": null,
+    "banido": false,
+    "banidoEm": null
+  },
+  "CHAVE008": {
+    "criado": null,
+    "expiracao": null,
+    "dias": 0,
+    "usuarioVinculado": null,
+    "usadoPor": null,
+    "usadoEm": null,
+    "banido": false,
+    "banidoEm": null
+  },
+  "CHAVE009": {
+    "criado": null,
+    "expiracao": null,
+    "dias": 0,
+    "usuarioVinculado": null,
+    "usadoPor": null,
+    "usadoEm": null,
+    "banido": false,
+    "banidoEm": null
+  },
+  "CHAVE010": {
+    "criado": null,
+    "expiracao": null,
+    "dias": 0,
+    "usuarioVinculado": null,
+    "usadoPor": null,
+    "usadoEm": null,
+    "banido": false,
+    "banidoEm": null
+  }
+}
