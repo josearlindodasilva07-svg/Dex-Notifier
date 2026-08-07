@@ -1,10 +1,23 @@
 const express = require('express');
+const WebSocket = require('ws');
 const fs = require('fs');
 const app = express();
+const port = process.env.PORT || 3000;
+
+// ============================================
+// MIDDLEWARE
+// ============================================
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    next();
+});
+app.use(express.text());
 app.use(express.json());
 
 // ============================================
-// CARREGA OS ARQUIVOS
+// SISTEMA DE KEYS
 // ============================================
 function loadJSON(file) {
     try {
@@ -19,7 +32,6 @@ function saveJSON(file, data) {
     fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-// CRIA OS ARQUIVOS SE NÃO EXISTIREM
 if (!fs.existsSync('keys.json')) {
     saveJSON('keys.json', {});
 }
@@ -35,7 +47,56 @@ let keys = loadJSON('keys.json');
 let config = loadJSON('config.json');
 
 // ============================================
-// ROTA: VERIFICAR KEY (USUÁRIO USA)
+// HUB - VARIÁVEIS
+// ============================================
+let activeUsers = {};
+let blacklisted = [];
+let currentAnnouncement = "";
+let clients = [];
+
+// ============================================
+// ROTAS DO HUB
+// ============================================
+app.get('/secure', (req, res) => {
+    res.json({ wss: `wss://${req.get('host')}` });
+});
+
+app.get('/usernames', (req, res) => {
+    res.send(Object.keys(activeUsers).join('\n'));
+});
+
+app.post('/usernames', (req, res) => {
+    if (req.body && req.body !== '') {
+        activeUsers[req.body] = Date.now();
+    }
+    res.send('OK');
+});
+
+app.get('/blacklisted', (req, res) => {
+    res.send(blacklisted.join('\n'));
+});
+
+app.get('/announcements', (req, res) => {
+    res.send(currentAnnouncement);
+});
+
+app.post('/announcements', (req, res) => {
+    if (req.body) currentAnnouncement = req.body;
+    res.send('OK');
+});
+
+app.post('/logs', (req, res) => {
+    console.log('[LOG]', req.body);
+    clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(req.body);
+        }
+    });
+    res.send('OK');
+});
+
+// ============================================
+// ROTAS DE KEYS
 // ============================================
 app.post('/verify', (req, res) => {
     const { key, username } = req.body;
@@ -91,9 +152,6 @@ app.post('/verify', (req, res) => {
     res.json({ success: true, message: 'Key válida!' });
 });
 
-// ============================================
-// ROTA: CRIAR KEY (ADMIN)
-// ============================================
 app.post('/create-key', (req, res) => {
     const { adminKey, key, days, usuario } = req.body;
     const cleanKey = key.toUpperCase().trim();
@@ -129,9 +187,6 @@ app.post('/create-key', (req, res) => {
     });
 });
 
-// ============================================
-// ROTA: LISTAR KEYS (ADMIN)
-// ============================================
 app.post('/list-keys', (req, res) => {
     const { adminKey } = req.body;
     
@@ -158,9 +213,6 @@ app.post('/list-keys', (req, res) => {
     res.json({ success: true, keys: list });
 });
 
-// ============================================
-// ROTA: BANIR KEY (ADMIN)
-// ============================================
 app.post('/ban-key', (req, res) => {
     const { adminKey, key } = req.body;
     const cleanKey = key.toUpperCase().trim();
@@ -179,9 +231,6 @@ app.post('/ban-key', (req, res) => {
     res.json({ success: true, message: `Key ${cleanKey} banida!` });
 });
 
-// ============================================
-// ROTA: DESBANIR KEY (ADMIN)
-// ============================================
 app.post('/unban-key', (req, res) => {
     const { adminKey, key } = req.body;
     const cleanKey = key.toUpperCase().trim();
@@ -200,9 +249,6 @@ app.post('/unban-key', (req, res) => {
     res.json({ success: true, message: `Key ${cleanKey} desbanida!` });
 });
 
-// ============================================
-// ROTA: RENOVAR KEY (ADMIN)
-// ============================================
 app.post('/renew-key', (req, res) => {
     const { adminKey, key, extraDays } = req.body;
     const cleanKey = key.toUpperCase().trim();
@@ -234,9 +280,6 @@ app.post('/renew-key', (req, res) => {
     res.json({ success: true, message: `Key renovada! +${days} dias` });
 });
 
-// ============================================
-// ROTA: DESATIVAR KEY ADM (ADMIN)
-// ============================================
 app.post('/disable-admin', (req, res) => {
     const { adminKey } = req.body;
     
@@ -249,9 +292,6 @@ app.post('/disable-admin', (req, res) => {
     res.json({ success: true, message: 'Admin Key desativada!' });
 });
 
-// ============================================
-// ROTA: CRIAR NOVA KEY ADM (ADMIN)
-// ============================================
 app.post('/new-admin', (req, res) => {
     const { adminKey, newAdminKey } = req.body;
     
@@ -265,9 +305,6 @@ app.post('/new-admin', (req, res) => {
     res.json({ success: true, message: 'Nova Admin Key criada!', adminKey: config.adminKey });
 });
 
-// ============================================
-// ROTA: ATIVAR KEY ADM (ADMIN)
-// ============================================
 app.post('/enable-admin', (req, res) => {
     const { adminKey } = req.body;
     
@@ -281,11 +318,34 @@ app.post('/enable-admin', (req, res) => {
 });
 
 // ============================================
-// INICIA O SERVIDOR NA PORTA 8080
+// WEBSOCKET
 // ============================================
-const PORT = 8080;
-app.listen(PORT, () => {
-    console.log('\n🚀 Servidor rodando na porta ' + PORT);
-    console.log('👑 Admin Key: ' + config.adminKey);
-    console.log('📊 Total de keys: ' + Object.keys(keys).length);
+const server = app.listen(port, '0.0.0.0', () => {
+    console.log(`\n🚀 Servidor rodando na porta ${port}`);
+    console.log(`👑 Admin Key: ${config.adminKey}`);
+    console.log(`📊 Total de keys: ${Object.keys(keys).length}`);
+    console.log(`🌐 WebSocket: wss://${require('os').hostname()}:${port}`);
 });
+
+const wss = new WebSocket.Server({ server });
+
+wss.on('connection', (ws) => {
+    console.log('✅ Cliente conectado ao WebSocket');
+    clients.push(ws);
+    
+    ws.on('close', () => {
+        clients = clients.filter(client => client !== ws);
+        console.log('❌ Cliente desconectado do WebSocket');
+    });
+    
+    ws.on('message', (message) => {
+        console.log('[WS] 📩', message.toString());
+        clients.forEach(client => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+                client.send(message.toString());
+            }
+        });
+    });
+});
+
+console.log(`✅ WebSocket rodando na porta ${port}`);
