@@ -14,7 +14,8 @@ app.use(express.text());
 
 let activeUsers = {};
 const blacklisted = [];
-let currentAnnouncement = "Bem-vindo ao Vex Notifier!";
+let currentAnnouncement = "";
+let clients = [];
 
 app.get('/secure', (req, res) => {
     res.json({ wss: `wss://${req.get('host')}` });
@@ -46,19 +47,37 @@ app.post('/announcements', (req, res) => {
 
 app.post('/logs', (req, res) => {
     console.log('[LOG]', req.body);
+    clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(req.body);
+        }
+    });
     res.send('OK');
 });
 
-// WEBSOCKET NA MESMA PORTA
 const server = app.listen(port, '0.0.0.0', () => {
-    console.log(`âœ… Servidor rodando na porta ${port}`);
+    console.log(`✅ Servidor rodando na porta ${port}`);
 });
 
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    console.log('âœ… Cliente conectado');
+    console.log('✅ Cliente conectado');
     clients.push(ws);
+    
+    ws.on('close', () => {
+        clients = clients.filter(client => client !== ws);
+        console.log('❌ Cliente desconectado');
+    });
+    
+    ws.on('message', (message) => {
+        console.log('[WS] 📩', message.toString());
+        clients.forEach(client => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+                client.send(message.toString());
+            }
+        });
+    });
 });
 
-let clients = [];
+console.log(`✅ WebSocket rodando na porta ${port}`);
