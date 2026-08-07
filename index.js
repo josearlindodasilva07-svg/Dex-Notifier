@@ -19,18 +19,6 @@ function saveJSON(file, data) {
     fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-// CRIA OS ARQUIVOS SE NÃO EXISTIREM
-if (!fs.existsSync('keys.json')) {
-    saveJSON('keys.json', {});
-}
-
-if (!fs.existsSync('config.json')) {
-    saveJSON('config.json', {
-        adminKey: 'ADMIN2024',
-        adminKeyActive: true
-    });
-}
-
 let keys = loadJSON('keys.json');
 let config = loadJSON('config.json');
 
@@ -41,7 +29,7 @@ app.post('/verify', (req, res) => {
     const { key, username } = req.body;
     const cleanKey = key.toUpperCase().trim();
     
-    // 1º - VERIFICA SE É A KEY ADM
+    // VERIFICA SE É A KEY ADM
     if (cleanKey === config.adminKey) {
         if (!config.adminKeyActive) {
             return res.json({ success: false, message: 'Sistema desativado' });
@@ -49,19 +37,19 @@ app.post('/verify', (req, res) => {
         return res.json({ success: true, message: 'Admin Key - Sempre ativa!' });
     }
     
-    // 2º - VERIFICA SE A KEY EXISTE
+    // VERIFICA SE A KEY EXISTE
     if (!keys[cleanKey]) {
         return res.json({ success: false, message: 'Key inválida' });
     }
     
     const keyData = keys[cleanKey];
     
-    // 3º - VERIFICA SE ESTÁ BANIDA
+    // VERIFICA SE ESTÁ BANIDA
     if (keyData.banido) {
         return res.json({ success: false, message: 'Key banida' });
     }
     
-    // 4º - VERIFICA SE EXPIROU
+    // VERIFICA SE EXPIROU
     if (keyData.expiracao) {
         const expires = new Date(keyData.expiracao);
         if (expires < new Date()) {
@@ -69,10 +57,9 @@ app.post('/verify', (req, res) => {
         }
     }
     
-    // 5º - VERIFICA SE O USUÁRIO É O VINCULADO
+    // VERIFICA SE O USUÁRIO É O VINCULADO
     if (keyData.usuarioVinculado) {
         if (keyData.usuarioVinculado !== username) {
-            // BANE A KEY AUTOMATICAMENTE
             keyData.banido = true;
             keyData.banidoEm = new Date().toLocaleString();
             saveJSON('keys.json', keys);
@@ -83,7 +70,7 @@ app.post('/verify', (req, res) => {
         }
     }
     
-    // 6º - VERIFICA SE JÁ ESTÁ EM USO
+    // VERIFICA SE JÁ ESTÁ EM USO
     if (keyData.usadoPor && keyData.usadoPor !== username) {
         keyData.banido = true;
         keyData.banidoEm = new Date().toLocaleString();
@@ -91,7 +78,7 @@ app.post('/verify', (req, res) => {
         return res.json({ success: false, message: 'Key banida! Já foi usada por outro' });
     }
     
-    // 7º - ATUALIZA USO
+    // ATUALIZA USO
     keyData.usadoPor = username;
     keyData.usadoEm = new Date().toLocaleString();
     saveJSON('keys.json', keys);
@@ -100,7 +87,7 @@ app.post('/verify', (req, res) => {
 });
 
 // ============================================
-// ROTA: CRIAR KEY (VOCÊ USA NO POSTMAN)
+// ROTA: CRIAR KEY (VOCÊ USA)
 // ============================================
 app.post('/create-key', (req, res) => {
     const { adminKey, key, days, usuario } = req.body;
@@ -138,7 +125,7 @@ app.post('/create-key', (req, res) => {
 });
 
 // ============================================
-// ROTA: LISTAR KEYS (VOCÊ USA NO POSTMAN)
+// ROTA: LISTAR KEYS (VOCÊ USA)
 // ============================================
 app.post('/list-keys', (req, res) => {
     const { adminKey } = req.body;
@@ -167,7 +154,7 @@ app.post('/list-keys', (req, res) => {
 });
 
 // ============================================
-// ROTA: BANIR KEY (VOCÊ USA NO POSTMAN)
+// ROTA: BANIR KEY (VOCÊ USA)
 // ============================================
 app.post('/ban-key', (req, res) => {
     const { adminKey, key } = req.body;
@@ -188,7 +175,7 @@ app.post('/ban-key', (req, res) => {
 });
 
 // ============================================
-// ROTA: DESBANIR KEY (VOCÊ USA NO POSTMAN)
+// ROTA: DESBANIR KEY (VOCÊ USA)
 // ============================================
 app.post('/unban-key', (req, res) => {
     const { adminKey, key } = req.body;
@@ -206,6 +193,40 @@ app.post('/unban-key', (req, res) => {
     keys[cleanKey].banidoEm = null;
     saveJSON('keys.json', keys);
     res.json({ success: true, message: `Key ${cleanKey} desbanida!` });
+});
+
+// ============================================
+// ROTA: RENOVAR KEY (VOCÊ USA)
+// ============================================
+app.post('/renew-key', (req, res) => {
+    const { adminKey, key, extraDays } = req.body;
+    const cleanKey = key.toUpperCase().trim();
+    
+    if (adminKey !== config.adminKey) {
+        return res.json({ success: false, message: 'Admin key inválida' });
+    }
+    
+    if (!keys[cleanKey]) {
+        return res.json({ success: false, message: 'Key não encontrada' });
+    }
+    
+    const days = extraDays || 30;
+    const now = new Date();
+    const currentExpires = new Date(keys[cleanKey].expiracao);
+    
+    if (currentExpires < now) {
+        const newExpires = new Date(now);
+        newExpires.setDate(newExpires.getDate() + days);
+        keys[cleanKey].expiracao = newExpires.toLocaleString();
+    } else {
+        const newExpires = new Date(currentExpires);
+        newExpires.setDate(newExpires.getDate() + days);
+        keys[cleanKey].expiracao = newExpires.toLocaleString();
+    }
+    
+    keys[cleanKey].dias = keys[cleanKey].dias + days;
+    saveJSON('keys.json', keys);
+    res.json({ success: true, message: `Key renovada! +${days} dias` });
 });
 
 // ============================================
