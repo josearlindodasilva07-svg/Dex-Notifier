@@ -1,15 +1,7 @@
 const express = require('express');
 const WebSocket = require('ws');
-const fs = require('fs');
-const path = require('path');
-
 const app = express();
 const port = process.env.PORT || 3000;
-
-// Chave de administrador — defina via variável de ambiente em produção.
-// Protege: ver logs, adicionar/remover da blacklist (HTTP e WebSocket).
-const ADMIN_KEY = process.env.ADMIN_KEY || '12345';
-const BLACKLIST_FILE = path.join(__dirname, 'blacklist.json');
 
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -21,45 +13,28 @@ app.use((req, res, next) => {
 app.use(express.text());
 
 let activeUsers = {};
-let blacklisted = [];
+const blacklisted = [];
 let currentAnnouncement = "";
 let clients = [];
 let serverLogs = [];
 
 // ============================================
-// BLACKLIST DE JOGADORES (PERSISTENTE EM DISCO)
+// BLACKLIST DE JOGADORES (PERSISTENTE)
 // ============================================
 
+// Blacklist padrÃƒÂ£o (jÃƒÂ¡ inclui alguns jogadores conhecidos)
 const DEFAULT_BLACKLIST = [
     "kakhaga",
     "kejshswh",
+    // Adicione aqui os jogadores que vocÃƒÂª quer banir
 ];
 
-function loadBlacklist() {
-    try {
-        if (fs.existsSync(BLACKLIST_FILE)) {
-            const raw = fs.readFileSync(BLACKLIST_FILE, 'utf8');
-            blacklisted = JSON.parse(raw);
-            return;
-        }
-    } catch (e) {
-        console.error('[BLACKLIST] Falha ao ler blacklist.json, usando padrão:', e.message);
-    }
-    blacklisted = [...DEFAULT_BLACKLIST];
-    saveBlacklist();
-}
+// Inicializa com a lista padrÃƒÂ£o
+blacklisted.push(...DEFAULT_BLACKLIST);
 
-function saveBlacklist() {
-    try {
-        fs.writeFileSync(BLACKLIST_FILE, JSON.stringify(blacklisted, null, 2));
-    } catch (e) {
-        console.error('[BLACKLIST] Falha ao salvar blacklist.json:', e.message);
-    }
-}
-
-function isValidUsername(name) {
-    return typeof name === 'string' && name.length > 0 && name.length <= 32;
-}
+// ============================================
+// FUNÃƒâ€¡Ãƒâ€¢ES DA BLACKLIST
+// ============================================
 
 function isPlayerBlacklisted(playerName) {
     return blacklisted.some(name => name.toLowerCase() === playerName.toLowerCase());
@@ -68,8 +43,7 @@ function isPlayerBlacklisted(playerName) {
 function addToBlacklist(playerName) {
     if (!isPlayerBlacklisted(playerName)) {
         blacklisted.push(playerName);
-        saveBlacklist();
-        console.log(`[BLACKLIST] + ${playerName} adicionado à blacklist`);
+        console.log(`[BLACKLIST] Ã¢Å¾â€¢ ${playerName} adicionado Ãƒ  blacklist`);
         return true;
     }
     return false;
@@ -79,22 +53,11 @@ function removeFromBlacklist(playerName) {
     const index = blacklisted.findIndex(name => name.toLowerCase() === playerName.toLowerCase());
     if (index !== -1) {
         blacklisted.splice(index, 1);
-        saveBlacklist();
-        console.log(`[BLACKLIST] - ${playerName} removido da blacklist`);
+        console.log(`[BLACKLIST] Ã¢Å¾â€“ ${playerName} removido da blacklist`);
         return true;
     }
     return false;
 }
-
-function requireAdminKey(req, res, next) {
-    const key = req.query.key || req.headers['x-admin-key'];
-    if (key !== ADMIN_KEY) {
-        return res.status(403).send('Acesso negado');
-    }
-    next();
-}
-
-loadBlacklist();
 
 // ============================================
 // ROTAS DA API
@@ -109,28 +72,29 @@ app.get('/usernames', (req, res) => {
 });
 
 app.post('/usernames', (req, res) => {
-    const username = req.body;
-    if (!isValidUsername(username)) {
-        return res.status(400).send('Nome de usuário inválido');
-    }
-
-    if (isPlayerBlacklisted(username)) {
-        console.log(`[BLACKLIST] Tentativa de conexão de ${username} (BANIDO)`);
-        return res.status(403).send('BLACKLISTED');
-    }
-
-    activeUsers[username] = Date.now();
-    console.log(`[USERS] + ${username} conectado`);
-
-    clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-                type: 'user_joined',
-                username: username
-            }));
+    if (req.body && req.body !== '') {
+        const username = req.body;
+        
+        // VERIFICA SE O USUÃƒÂRIO ESTÃƒÂ NA BLACKLIST
+        if (isPlayerBlacklisted(username)) {
+            console.log(`[BLACKLIST] Ã°Å¸Å¡Â« Tentativa de conexÃƒÂ£o de ${username} (BANIDO)`);
+            res.status(403).send('BLACKLISTED');
+            return;
         }
-    });
-
+        
+        activeUsers[username] = Date.now();
+        console.log(`[USERS] Ã¢Å¾â€¢ ${username} conectado`);
+        
+        // Notifica todos os clients sobre o novo usuÃƒÂ¡rio
+        clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
+                    type: 'user_joined',
+                    username: username
+                }));
+            }
+        });
+    }
     res.send('OK');
 });
 
@@ -138,30 +102,36 @@ app.get('/blacklisted', (req, res) => {
     res.send(blacklisted.join('\n'));
 });
 
-// Rotas de escrita da blacklist agora exigem a chave de admin
-app.post('/blacklisted/add', requireAdminKey, (req, res) => {
+// ADICIONAR Ãƒâ‚¬ BLACKLIST
+app.post('/blacklisted/add', (req, res) => {
     const username = req.body;
-    if (!isValidUsername(username)) {
-        return res.status(400).send('Nome de usuário inválido');
-    }
-    if (addToBlacklist(username)) {
-        delete activeUsers[username];
-        console.log(`[USERS] x ${username} removido dos ativos (BANIDO)`);
-        res.send(`${username} adicionado à blacklist`);
+    if (username && username !== '') {
+        if (addToBlacklist(username)) {
+            // Remove o usuÃƒÂ¡rio da lista de ativos se estiver conectado
+            if (activeUsers[username]) {
+                activeUsers[username] = undefined;
+                console.log(`[USERS] Ã¢ÂÅ’ ${username} removido dos ativos (BANIDO)`);
+            }
+            res.send(`Ã¢Å“â€¦ ${username} adicionado Ãƒ  blacklist`);
+        } else {
+            res.send(`Ã¢Å¡ Ã¯Â¸Â ${username} jÃƒÂ¡ estÃƒÂ¡ na blacklist`);
+        }
     } else {
-        res.send(`${username} já está na blacklist`);
+        res.status(400).send('Ã¢ÂÅ’ Nome de usuÃƒÂ¡rio invÃƒÂ¡lido');
     }
 });
 
-app.post('/blacklisted/remove', requireAdminKey, (req, res) => {
+// REMOVER DA BLACKLIST
+app.post('/blacklisted/remove', (req, res) => {
     const username = req.body;
-    if (!isValidUsername(username)) {
-        return res.status(400).send('Nome de usuário inválido');
-    }
-    if (removeFromBlacklist(username)) {
-        res.send(`${username} removido da blacklist`);
+    if (username && username !== '') {
+        if (removeFromBlacklist(username)) {
+            res.send(`Ã¢Å“â€¦ ${username} removido da blacklist`);
+        } else {
+            res.send(`Ã¢Å¡ Ã¯Â¸Â ${username} nÃƒÂ£o estÃƒÂ¡ na blacklist`);
+        }
     } else {
-        res.send(`${username} não está na blacklist`);
+        res.status(400).send('Ã¢ÂÅ’ Nome de usuÃƒÂ¡rio invÃƒÂ¡lido');
     }
 });
 
@@ -169,23 +139,26 @@ app.get('/announcements', (req, res) => {
     res.send(currentAnnouncement);
 });
 
-app.post('/announcements', requireAdminKey, (req, res) => {
+app.post('/announcements', (req, res) => {
     if (req.body) currentAnnouncement = req.body;
     res.send('OK');
 });
 
+// LOGS com mais informaÃƒÂ§ÃƒÂµes
 app.post('/logs', (req, res) => {
     const logData = req.body;
     const timestamp = new Date().toISOString();
     const logEntry = `[${timestamp}] ${logData}`;
-
+    
     console.log('[LOG]', logEntry);
     serverLogs.push(logEntry);
-
+    
+    // MantÃƒÂ©m apenas os ÃƒÂºltimos 1000 logs
     if (serverLogs.length > 1000) {
         serverLogs.shift();
     }
-
+    
+    // Envia para todos os clientes conectados
     clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(logData);
@@ -194,24 +167,36 @@ app.post('/logs', (req, res) => {
     res.send('OK');
 });
 
-app.get('/logs', requireAdminKey, (req, res) => {
-    res.send(serverLogs.join('\n'));
+// Rota para ver os logs (protegido por chave)
+app.get('/logs', (req, res) => {
+    const senderKey = req.query.sender_key;
+    if (senderKey === '12345') {
+        res.send(serverLogs.join('\n'));
+    } else {
+        res.status(403).send('Acesso negado');
+    }
 });
 
+// Rota para ver a lista de usuÃƒÂ¡rios ativos
 app.get('/active-users', (req, res) => {
     const now = Date.now();
+    const active = {};
+    
+    // Remove usuÃƒÂ¡rios inativos hÃƒÂ¡ mais de 5 minutos
     for (const [user, time] of Object.entries(activeUsers)) {
-        if (now - time >= 300000) {
-            delete activeUsers[user];
+        if (now - time < 300000) { // 5 minutos
+            active[user] = time;
         }
     }
-
+    activeUsers = active;
+    
     res.json({
         count: Object.keys(activeUsers).length,
         users: Object.keys(activeUsers)
     });
 });
 
+// Rota de status do servidor
 app.get('/status', (req, res) => {
     res.json({
         status: 'online',
@@ -228,36 +213,33 @@ app.get('/status', (req, res) => {
 // ============================================
 
 const server = app.listen(port, '0.0.0.0', () => {
-    console.log(`Servidor rodando na porta ${port}`);
-    console.log(`Blacklist carregada: ${blacklisted.length} jogadores`);
-    console.log(`${Object.keys(activeUsers).length} usuários ativos`);
-    if (ADMIN_KEY === '12345') {
-        console.log('AVISO: ADMIN_KEY não configurada — usando valor padrão inseguro. Defina a variável de ambiente ADMIN_KEY.');
-    }
+    console.log(`Ã¢Å“â€¦ Servidor rodando na porta ${port}`);
+    console.log(`Ã°Å¸â€œâ€¹ Blacklist carregada: ${blacklisted.length} jogadores`);
+    console.log(`Ã°Å¸â€˜Â¥ ${Object.keys(activeUsers).length} usuÃƒÂ¡rios ativos`);
 });
 
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    console.log('Cliente conectado ao WebSocket');
+    console.log('Ã¢Å“â€¦ Cliente conectado ao WebSocket');
     clients.push(ws);
-
+    
     ws.on('close', () => {
         clients = clients.filter(client => client !== ws);
-        console.log('Cliente desconectado do WebSocket');
+        console.log('Ã¢ÂÅ’ Cliente desconectado do WebSocket');
     });
-
+    
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
-
-            if (data.type === 'blacklist_add' && isValidUsername(data.username)) {
-                if (data.key !== ADMIN_KEY) {
-                    ws.send(JSON.stringify({ type: 'error', message: 'unauthorized' }));
-                    return;
-                }
+            
+            // Verifica se ÃƒÂ© um comando de blacklist via WebSocket
+            if (data.type === 'blacklist_add' && data.username) {
                 if (addToBlacklist(data.username)) {
-                    delete activeUsers[data.username];
+                    // Remove o usuÃƒÂ¡rio da lista de ativos
+                    if (activeUsers[data.username]) {
+                        activeUsers[data.username] = undefined;
+                    }
                     ws.send(JSON.stringify({
                         type: 'blacklist_update',
                         action: 'add',
@@ -265,11 +247,7 @@ wss.on('connection', (ws) => {
                         success: true
                     }));
                 }
-            } else if (data.type === 'blacklist_remove' && isValidUsername(data.username)) {
-                if (data.key !== ADMIN_KEY) {
-                    ws.send(JSON.stringify({ type: 'error', message: 'unauthorized' }));
-                    return;
-                }
+            } else if (data.type === 'blacklist_remove' && data.username) {
                 if (removeFromBlacklist(data.username)) {
                     ws.send(JSON.stringify({
                         type: 'blacklist_update',
@@ -279,6 +257,7 @@ wss.on('connection', (ws) => {
                     }));
                 }
             } else {
+                // Encaminha mensagens normais para outros clientes
                 clients.forEach(client => {
                     if (client !== ws && client.readyState === WebSocket.OPEN) {
                         client.send(message.toString());
@@ -286,6 +265,7 @@ wss.on('connection', (ws) => {
                 });
             }
         } catch (e) {
+            // Se nÃƒÂ£o for JSON, encaminha como texto
             clients.forEach(client => {
                 if (client !== ws && client.readyState === WebSocket.OPEN) {
                     client.send(message.toString());
@@ -296,36 +276,36 @@ wss.on('connection', (ws) => {
 });
 
 // ============================================
-// LIMPEZA DE USUÁRIOS INATIVOS (a cada 30 segundos)
+// LIMPEZA DE USUÃƒÂRIOS INATIVOS (a cada 30 segundos)
 // ============================================
 
 setInterval(() => {
     const now = Date.now();
     let changed = false;
-
+    
     for (const [user, time] of Object.entries(activeUsers)) {
-        if (now - time > 300000) {
-            delete activeUsers[user];
+        if (now - time > 300000) { // 5 minutos
+            activeUsers[user] = undefined;
             changed = true;
-            console.log(`[USERS] ${user} removido por inatividade`);
+            console.log(`[USERS] Ã°Å¸â€¢Â ${user} removido por inatividade`);
         }
     }
-
+    
     if (changed) {
-        console.log(`[USERS] ${Object.keys(activeUsers).length} usuários ativos`);
+        console.log(`[USERS] Ã°Å¸â€˜Â¥ ${Object.keys(activeUsers).length} usuÃƒÂ¡rios ativos`);
     }
 }, 30000);
 
-console.log(`Endpoints disponíveis:`);
+console.log(`Ã¢Å“â€¦ WebSocket rodando na porta ${port}`);
+console.log(`Ã°Å¸â€œÂ¡ Endpoints disponÃƒÂ­veis:`);
 console.log(`   GET  /secure`);
 console.log(`   GET  /usernames`);
 console.log(`   POST /usernames`);
 console.log(`   GET  /blacklisted`);
-console.log(`   POST /blacklisted/add   (?key=ADMIN_KEY)`);
-console.log(`   POST /blacklisted/remove (?key=ADMIN_KEY)`);
+console.log(`   POST /blacklisted/add`);
+console.log(`   POST /blacklisted/remove`);
 console.log(`   GET  /announcements`);
-console.log(`   POST /announcements     (?key=ADMIN_KEY)`);
+console.log(`   POST /announcements`);
 console.log(`   POST /logs`);
-console.log(`   GET  /logs              (?key=ADMIN_KEY)`);
 console.log(`   GET  /active-users`);
 console.log(`   GET  /status`);
