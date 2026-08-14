@@ -17,23 +17,50 @@ const blacklisted = [];
 let currentAnnouncement = "";
 let clients = [];
 let serverLogs = [];
+const recentSpotting = new Map();
+const SPOTTING_TTL_MS = 15000;
+
+function broadcastToUsers(payload, except = null) {
+    const message = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    clients.forEach(client => {
+        if (client !== except && client.role !== 'scanner' && client.readyState === WebSocket.OPEN) {
+            try { client.send(message); } catch (_) {}
+        }
+    });
+}
+
+function isDuplicateSpotting(data) {
+    const now = Date.now();
+    for (const [key, time] of recentSpotting) {
+        if (now - time > SPOTTING_TTL_MS) recentSpotting.delete(key);
+    }
+    const key = data.event_id || [
+        data.job_id,
+        data.raw_name || data.name || (data.pet && (data.pet.display_name || data.pet.name)),
+        data.generation
+    ].join('|');
+    if (!key || key === '||') return false;
+    if (recentSpotting.has(key)) return true;
+    recentSpotting.set(key, now);
+    return false;
+}
 
 // ============================================
 // BLACKLIST DE JOGADORES (PERSISTENTE)
 // ============================================
 
-// Blacklist padrÃƒÂ£o (jÃƒÂ¡ inclui alguns jogadores conhecidos)
+// Blacklist padrAAo (jAA inclui alguns jogadores conhecidos)
 const DEFAULT_BLACKLIST = [
     "kakhaga",
     "kejshswh",
-    // Adicione aqui os jogadores que vocÃƒÂª quer banir
+    // Adicione aqui os jogadores que vocAAa quer banir
 ];
 
-// Inicializa com a lista padrÃƒÂ£o
+// Inicializa com a lista padrAAo
 blacklisted.push(...DEFAULT_BLACKLIST);
 
 // ============================================
-// FUNÃƒâ€¡Ãƒâ€¢ES DA BLACKLIST
+// FUNAaAaES DA BLACKLIST
 // ============================================
 
 function isPlayerBlacklisted(playerName) {
@@ -43,7 +70,7 @@ function isPlayerBlacklisted(playerName) {
 function addToBlacklist(playerName) {
     if (!isPlayerBlacklisted(playerName)) {
         blacklisted.push(playerName);
-        console.log(`[BLACKLIST] Ã¢Å¾â€¢ ${playerName} adicionado Ãƒ  blacklist`);
+        console.log(`[BLACKLIST] AA34a ${playerName} adicionado A  blacklist`);
         return true;
     }
     return false;
@@ -53,7 +80,7 @@ function removeFromBlacklist(playerName) {
     const index = blacklisted.findIndex(name => name.toLowerCase() === playerName.toLowerCase());
     if (index !== -1) {
         blacklisted.splice(index, 1);
-        console.log(`[BLACKLIST] Ã¢Å¾â€“ ${playerName} removido da blacklist`);
+        console.log(`[BLACKLIST] AA34a ${playerName} removido da blacklist`);
         return true;
     }
     return false;
@@ -75,17 +102,17 @@ app.post('/usernames', (req, res) => {
     if (req.body && req.body !== '') {
         const username = req.body;
         
-        // VERIFICA SE O USUÃƒÂRIO ESTÃƒÂ NA BLACKLIST
+        // VERIFICA SE O USUAARIO ESTAA NA BLACKLIST
         if (isPlayerBlacklisted(username)) {
-            console.log(`[BLACKLIST] Ã°Å¸Å¡Â« Tentativa de conexÃƒÂ£o de ${username} (BANIDO)`);
+            console.log(`[BLACKLIST] AA AA Tentativa de conexAAo de ${username} (BANIDO)`);
             res.status(403).send('BLACKLISTED');
             return;
         }
         
         activeUsers[username] = Date.now();
-        console.log(`[USERS] Ã¢Å¾â€¢ ${username} conectado`);
+        console.log(`[USERS] AA34a ${username} conectado`);
         
-        // Notifica todos os clients sobre o novo usuÃƒÂ¡rio
+        // Notifica todos os clients sobre o novo usuAArio
         clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
                 client.send(JSON.stringify({
@@ -102,22 +129,22 @@ app.get('/blacklisted', (req, res) => {
     res.send(blacklisted.join('\n'));
 });
 
-// ADICIONAR Ãƒâ‚¬ BLACKLIST
+// ADICIONAR Aa BLACKLIST
 app.post('/blacklisted/add', (req, res) => {
     const username = req.body;
     if (username && username !== '') {
         if (addToBlacklist(username)) {
-            // Remove o usuÃƒÂ¡rio da lista de ativos se estiver conectado
+            // Remove o usuAArio da lista de ativos se estiver conectado
             if (activeUsers[username]) {
                 activeUsers[username] = undefined;
-                console.log(`[USERS] Ã¢ÂÅ’ ${username} removido dos ativos (BANIDO)`);
+                console.log(`[USERS] AAA ${username} removido dos ativos (BANIDO)`);
             }
-            res.send(`Ã¢Å“â€¦ ${username} adicionado Ãƒ  blacklist`);
+            res.send(`AAa ${username} adicionado A  blacklist`);
         } else {
-            res.send(`Ã¢Å¡ Ã¯Â¸Â ${username} jÃƒÂ¡ estÃƒÂ¡ na blacklist`);
+            res.send(`AA A A A ${username} jAA estAA na blacklist`);
         }
     } else {
-        res.status(400).send('Ã¢ÂÅ’ Nome de usuÃƒÂ¡rio invÃƒÂ¡lido');
+        res.status(400).send('AAA Nome de usuAArio invAAlido');
     }
 });
 
@@ -126,12 +153,12 @@ app.post('/blacklisted/remove', (req, res) => {
     const username = req.body;
     if (username && username !== '') {
         if (removeFromBlacklist(username)) {
-            res.send(`Ã¢Å“â€¦ ${username} removido da blacklist`);
+            res.send(`AAa ${username} removido da blacklist`);
         } else {
-            res.send(`Ã¢Å¡ Ã¯Â¸Â ${username} nÃƒÂ£o estÃƒÂ¡ na blacklist`);
+            res.send(`AA A A A ${username} nAAo estAA na blacklist`);
         }
     } else {
-        res.status(400).send('Ã¢ÂÅ’ Nome de usuÃƒÂ¡rio invÃƒÂ¡lido');
+        res.status(400).send('AAA Nome de usuAArio invAAlido');
     }
 });
 
@@ -144,7 +171,7 @@ app.post('/announcements', (req, res) => {
     res.send('OK');
 });
 
-// LOGS com mais informaÃƒÂ§ÃƒÂµes
+// LOGS com mais informaAAAAes
 app.post('/logs', (req, res) => {
     const logData = req.body;
     const timestamp = new Date().toISOString();
@@ -153,7 +180,7 @@ app.post('/logs', (req, res) => {
     console.log('[LOG]', logEntry);
     serverLogs.push(logEntry);
     
-    // MantÃƒÂ©m apenas os ÃƒÂºltimos 1000 logs
+    // MantAAm apenas os AAoltimos 1000 logs
     if (serverLogs.length > 1000) {
         serverLogs.shift();
     }
@@ -177,12 +204,12 @@ app.get('/logs', (req, res) => {
     }
 });
 
-// Rota para ver a lista de usuÃƒÂ¡rios ativos
+// Rota para ver a lista de usuAArios ativos
 app.get('/active-users', (req, res) => {
     const now = Date.now();
     const active = {};
     
-    // Remove usuÃƒÂ¡rios inativos hÃƒÂ¡ mais de 5 minutos
+    // Remove usuAArios inativos hAA mais de 5 minutos
     for (const [user, time] of Object.entries(activeUsers)) {
         if (now - time < 300000) { // 5 minutos
             active[user] = time;
@@ -213,30 +240,41 @@ app.get('/status', (req, res) => {
 // ============================================
 
 const server = app.listen(port, '0.0.0.0', () => {
-    console.log(`Ã¢Å“â€¦ Servidor rodando na porta ${port}`);
-    console.log(`Ã°Å¸â€œâ€¹ Blacklist carregada: ${blacklisted.length} jogadores`);
-    console.log(`Ã°Å¸â€˜Â¥ ${Object.keys(activeUsers).length} usuÃƒÂ¡rios ativos`);
+    console.log(`AAa Servidor rodando na porta ${port}`);
+    console.log(`AA aa1 Blacklist carregada: ${blacklisted.length} jogadores`);
+    console.log(`AA a A ${Object.keys(activeUsers).length} usuAArios ativos`);
 });
 
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    console.log('Ã¢Å“â€¦ Cliente conectado ao WebSocket');
+    console.log('Cliente conectado ao WebSocket');
+    // Clientes sao usuarios por padrao; spotting identifica um Scanner Bot.
+    ws.role = 'user';
     clients.push(ws);
     
     ws.on('close', () => {
         clients = clients.filter(client => client !== ws);
-        console.log('Ã¢ÂÅ’ Cliente desconectado do WebSocket');
+        console.log('AAA Cliente desconectado do WebSocket');
     });
     
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
             
-            // Verifica se ÃƒÂ© um comando de blacklist via WebSocket
+            // Scanner Bots publicam Secrets; o Hub encaminha apenas aos usuarios.
+            if (data.type === 'spotting') {
+                ws.role = 'scanner';
+                if (!isDuplicateSpotting(data)) {
+                    broadcastToUsers(data, ws);
+                }
+                return;
+            }
+
+            // Verifica se e um comando de blacklist via WebSocket
             if (data.type === 'blacklist_add' && data.username) {
                 if (addToBlacklist(data.username)) {
-                    // Remove o usuÃƒÂ¡rio da lista de ativos
+                    // Remove o usuAArio da lista de ativos
                     if (activeUsers[data.username]) {
                         activeUsers[data.username] = undefined;
                     }
@@ -257,26 +295,18 @@ wss.on('connection', (ws) => {
                     }));
                 }
             } else {
-                // Encaminha mensagens normais para outros clientes
-                clients.forEach(client => {
-                    if (client !== ws && client.readyState === WebSocket.OPEN) {
-                        client.send(message.toString());
-                    }
-                });
+                // Encaminha mensagens normais somente para usuarios.
+                broadcastToUsers(message.toString(), ws);
             }
         } catch (e) {
-            // Se nÃƒÂ£o for JSON, encaminha como texto
-            clients.forEach(client => {
-                if (client !== ws && client.readyState === WebSocket.OPEN) {
-                    client.send(message.toString());
-                }
-            });
+            // Se nao for JSON, encaminha como texto somente para usuarios.
+            broadcastToUsers(message.toString(), ws);
         }
     });
 });
 
 // ============================================
-// LIMPEZA DE USUÃƒÂRIOS INATIVOS (a cada 30 segundos)
+// LIMPEZA DE USUAARIOS INATIVOS (a cada 30 segundos)
 // ============================================
 
 setInterval(() => {
@@ -287,17 +317,17 @@ setInterval(() => {
         if (now - time > 300000) { // 5 minutos
             activeUsers[user] = undefined;
             changed = true;
-            console.log(`[USERS] Ã°Å¸â€¢Â ${user} removido por inatividade`);
+            console.log(`[USERS] AA aA ${user} removido por inatividade`);
         }
     }
     
     if (changed) {
-        console.log(`[USERS] Ã°Å¸â€˜Â¥ ${Object.keys(activeUsers).length} usuÃƒÂ¡rios ativos`);
+        console.log(`[USERS] AA a A ${Object.keys(activeUsers).length} usuAArios ativos`);
     }
 }, 30000);
 
-console.log(`Ã¢Å“â€¦ WebSocket rodando na porta ${port}`);
-console.log(`Ã°Å¸â€œÂ¡ Endpoints disponÃƒÂ­veis:`);
+console.log(`AAa WebSocket rodando na porta ${port}`);
+console.log(`AA aA Endpoints disponAAveis:`);
 console.log(`   GET  /secure`);
 console.log(`   GET  /usernames`);
 console.log(`   POST /usernames`);
