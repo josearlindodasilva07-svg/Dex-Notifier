@@ -1,7 +1,7 @@
 {
   "name": "dex-notifier",
   "version": "2.0.0",
-  "description": "Dex Notifier Server with Blacklist Support",
+  "description": "Dex Notifier Server with Scanner Bot and Hub routing",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
