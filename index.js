@@ -19,6 +19,7 @@ let clients = [];
 let serverLogs = [];
 const recentSpotting = new Map();
 const SPOTTING_TTL_MS = 15000;
+let latestSpotting = null;
 
 function broadcastToUsers(payload, except = null) {
     const message = typeof payload === 'string' ? payload : JSON.stringify(payload);
@@ -247,11 +248,17 @@ const server = app.listen(port, '0.0.0.0', () => {
 
 const wss = new WebSocket.Server({ server });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, request) => {
     console.log('Cliente conectado ao WebSocket');
-    // Clientes sao usuarios por padrao; spotting identifica um Scanner Bot.
-    ws.role = 'user';
+    // Scanner Bots identify themselves in the query string; users stay user-only.
+    const requestUrl = String((request && request.url) || '');
+    ws.role = /(?:\?|&)role=scanner(?:&|$)/i.test(requestUrl) ? 'scanner' : 'user';
     clients.push(ws);
+
+    // Replay the current best event so users that connect after detection see it.
+    if (ws.role === 'user' && latestSpotting && ws.readyState === WebSocket.OPEN) {
+        try { ws.send(JSON.stringify(latestSpotting)); } catch (_) {}
+    }
     
     ws.on('close', () => {
         clients = clients.filter(client => client !== ws);
@@ -266,6 +273,7 @@ wss.on('connection', (ws) => {
             if (data.type === 'spotting') {
                 ws.role = 'scanner';
                 if (!isDuplicateSpotting(data)) {
+                    latestSpotting = data;
                     broadcastToUsers(data, ws);
                 }
                 return;
