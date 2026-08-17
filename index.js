@@ -16,46 +16,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '32kb' }));
 app.use(express.text({ limit: '32kb' }));
 
-// ============================================================
-// AUTORIZAÇÃO POR USERID — SEM KEY
-// ============================================================
-// Coloque aqui os UserIds numéricos autorizados a usar o VEX.
-// Exemplo: const AUTHORIZED_USER_IDS = [123456789];
-const AUTHORIZED_USER_IDS = [
-    9335862099, // ID 01 — troque 0 pelo UserId
-    9749972564, // ID 02
-    0, // ID 03
-    0, // ID 04
-    0, // ID 05
-    0, // ID 06
-    0, // ID 07
-    0, // ID 08
-    0, // ID 09
-    0, // ID 10
-    0, // ID 11
-    0, // ID 12
-    0, // ID 13
-    0, // ID 14
-    0, // ID 15
-    0, // ID 16
-    0, // ID 17
-    0, // ID 18
-    0, // ID 19
-    0  // ID 20
-];
-
-function isAuthorizedUserId(value) {
-    const id = String(value == null ? '' : value).trim();
-    return id !== '' && AUTHORIZED_USER_IDS.some(allowed => String(allowed) === id);
-}
-
-app.get('/auth/validate', (req, res) => {
-    const userId = req.query.userId;
-    if (!isAuthorizedUserId(userId)) {
-        return res.status(403).json({ ok: false, error: 'UserId não autorizado' });
-    }
-    res.json({ ok: true, userId: String(userId) });
-});
+// Hub gratuito: sem Key e sem autorização por UserId.
 
 let activeUsers = {};
 const blacklisted = [];
