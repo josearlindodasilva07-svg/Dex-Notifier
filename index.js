@@ -253,9 +253,6 @@ wss.on('connection', (ws) => {
     // Clientes sao usuarios por padrao; spotting identifica um Scanner Bot.
     ws.role = 'user';
     clients.push(ws);
-    if (latestSpotting && ws.readyState === WebSocket.OPEN) {
-        try { ws.send(JSON.stringify(latestSpotting)); } catch (_) {}
-    }
     
     ws.on('close', () => {
         clients = clients.filter(client => client !== ws);
