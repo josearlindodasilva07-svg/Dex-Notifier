@@ -23,7 +23,7 @@ app.use(express.text({ limit: '32kb' }));
 // Exemplo: const AUTHORIZED_USER_IDS = [123456789];
 const AUTHORIZED_USER_IDS = [
     9335862099, // ID 01 — troque 0 pelo UserId
-    0, // ID 02
+    9749972564, // ID 02
     0, // ID 03
     0, // ID 04
     0, // ID 05
