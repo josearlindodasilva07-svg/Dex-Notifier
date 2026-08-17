@@ -248,15 +248,12 @@ const server = app.listen(port, '0.0.0.0', () => {
 
 const wss = new WebSocket.Server({ server });
 
-wss.on('connection', (ws, request) => {
+wss.on('connection', (ws) => {
     console.log('Cliente conectado ao WebSocket');
-    // Scanner Bots identify themselves in the query string; users stay user-only.
-    const requestUrl = String((request && request.url) || '');
-    ws.role = /(?:\?|&)role=scanner(?:&|$)/i.test(requestUrl) ? 'scanner' : 'user';
+    // Clientes sao usuarios por padrao; spotting identifica um Scanner Bot.
+    ws.role = 'user';
     clients.push(ws);
-
-    // Replay the current best event so users that connect after detection see it.
-    if (ws.role === 'user' && latestSpotting && ws.readyState === WebSocket.OPEN) {
+    if (latestSpotting && ws.readyState === WebSocket.OPEN) {
         try { ws.send(JSON.stringify(latestSpotting)); } catch (_) {}
     }
     
