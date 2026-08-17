@@ -52,7 +52,7 @@ function isDuplicateSpotting(data) {
 
 // Blacklist padrAAo (jAA inclui alguns jogadores conhecidos)
 const DEFAULT_BLACKLIST = [
-    "kakhaga",
+    "script_2158",
     "kejshswh",
     // Adicione aqui os jogadores que vocAAa quer banir
 ];
