@@ -1,5 +1,8 @@
 const express = require('express');
 const WebSocket = require('ws');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -10,7 +13,49 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.text());
+app.use(express.json({ limit: '32kb' }));
+app.use(express.text({ limit: '32kb' }));
+
+// ============================================================
+// AUTORIZAÇÃO POR USERID — SEM KEY
+// ============================================================
+// Coloque aqui os UserIds numéricos autorizados a usar o VEX.
+// Exemplo: const AUTHORIZED_USER_IDS = [123456789];
+const AUTHORIZED_USER_IDS = [
+    9335862099, // ID 01 — troque 0 pelo UserId
+    0, // ID 02
+    0, // ID 03
+    0, // ID 04
+    0, // ID 05
+    0, // ID 06
+    0, // ID 07
+    0, // ID 08
+    0, // ID 09
+    0, // ID 10
+    0, // ID 11
+    0, // ID 12
+    0, // ID 13
+    0, // ID 14
+    0, // ID 15
+    0, // ID 16
+    0, // ID 17
+    0, // ID 18
+    0, // ID 19
+    0  // ID 20
+];
+
+function isAuthorizedUserId(value) {
+    const id = String(value == null ? '' : value).trim();
+    return id !== '' && AUTHORIZED_USER_IDS.some(allowed => String(allowed) === id);
+}
+
+app.get('/auth/validate', (req, res) => {
+    const userId = req.query.userId;
+    if (!isAuthorizedUserId(userId)) {
+        return res.status(403).json({ ok: false, error: 'UserId não autorizado' });
+    }
+    res.json({ ok: true, userId: String(userId) });
+});
 
 let activeUsers = {};
 const blacklisted = [];
@@ -52,7 +97,7 @@ function isDuplicateSpotting(data) {
 
 // Blacklist padrAAo (jAA inclui alguns jogadores conhecidos)
 const DEFAULT_BLACKLIST = [
-    "kejshww",
+    "kakhaga",
     "kejshswh",
     // Adicione aqui os jogadores que vocAAa quer banir
 ];
