@@ -1,5 +1,8 @@
 const express = require('express');
 const WebSocket = require('ws');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -10,7 +13,150 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.text());
+app.use(express.json({ limit: '32kb' }));
+app.use(express.text({ limit: '32kb' }));
+
+// ============================================================
+// SISTEMA DE KEYS
+// ============================================================
+const KEY_FILE = path.join(__dirname, 'keys.json');
+const KEY_ADMIN_SECRET = process.env.KEY_ADMIN_SECRET || '';
+let keyStore = {};
+
+// ============================================================
+// KEYS MANUAIS — EDITE AQUI, IGUAL À LISTA DA BLACKLIST
+// ============================================================
+// expiresAt usa data ISO UTC: AAAA-MM-DDTHH:MM:SSZ
+// enabled: true libera; false desativa sem apagar a Key.
+const MANUAL_KEYS = [
+    {
+        key: 'GODENOT123',
+        authorizedUser: 'script_2156',
+        expiresAt: '2026-12-31T23:59:59Z',
+        enabled: True
+    }
+];
+
+function getManualKey(key, user) {
+    const wantedKey = String(key || '').trim();
+    const wantedUser = normalizeUsername(user);
+    const item = MANUAL_KEYS.find(entry =>
+        entry && entry.enabled === true && String(entry.key || '').trim() === wantedKey
+    );
+    if (!item) return null;
+    const expiresAt = Date.parse(item.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+    if (!wantedUser || normalizeUsername(item.authorizedUser) !== wantedUser) return null;
+    return {
+        createdAt: item.createdAt || null,
+        expiresAt,
+        status: 'active',
+        authorizedUser: item.authorizedUser,
+        manual: true
+    };
+}
+
+function loadKeyStore() {
+    try {
+        if (fs.existsSync(KEY_FILE)) keyStore = JSON.parse(fs.readFileSync(KEY_FILE, 'utf8')) || {};
+    } catch (_) { keyStore = {}; }
+}
+function saveKeyStore() {
+    try { fs.writeFileSync(KEY_FILE, JSON.stringify(keyStore, null, 2)); } catch (_) {}
+}
+function requireKeyAdmin(req, res) {
+    const supplied = req.get('x-admin-key') || (req.get('authorization') || '').replace(/^Bearer\\s+/i, '');
+    if (!KEY_ADMIN_SECRET || supplied !== KEY_ADMIN_SECRET) {
+        res.status(403).json({ ok: false, error: 'Admin Key inválida' });
+        return false;
+    }
+    return true;
+}
+function durationMs(value) {
+    const map = { '1h': 3600000, '1d': 86400000, '1w': 604800000, '30d': 2592000000 };
+    return map[String(value || '').toLowerCase()] || 0;
+}
+function makeScriptKey() {
+    return 'VEX-' + crypto.randomBytes(18).toString('hex').toUpperCase();
+}
+function normalizeUsername(value) {
+    return String(value || '').trim().toLowerCase();
+}
+function cleanExpiredKeys() {
+    const now = Date.now();
+    for (const [key, data] of Object.entries(keyStore)) {
+        if (data && data.expiresAt !== null && Number(data.expiresAt) <= now) data.status = 'expired';
+    }
+}
+loadKeyStore();
+
+app.post('/keys/create', (req, res) => {
+    if (!requireKeyAdmin(req, res)) return;
+    const duration = String((req.body && req.body.duration) || '1d').toLowerCase();
+    const authorizedUser = String((req.body && (req.body.authorizedUser || req.body.username)) || '').trim();
+    const ms = durationMs(duration);
+    if (!ms) return res.status(400).json({ ok: false, error: 'Duração inválida. Use 1h, 1d, 1w ou 30d.' });
+    if (!authorizedUser) return res.status(400).json({ ok: false, error: 'Informe o nome do jogador autorizado.' });
+    const key = makeScriptKey();
+    keyStore[key] = { createdAt: Date.now(), expiresAt: Date.now() + ms, status: 'active', authorizedUser, authorizedUserNormalized: normalizeUsername(authorizedUser) };
+    saveKeyStore();
+    res.json({ ok: true, key, duration, authorizedUser, expiresAt: keyStore[key].expiresAt });
+});
+
+function getActiveKey(key, user) {
+    const manual = getManualKey(key, user);
+    if (manual) return manual;
+    cleanExpiredKeys();
+    const data = keyStore[String(key || '').trim()];
+    if (!data || data.status !== 'active') return null;
+    const requestedUser = normalizeUsername(user);
+    const authorizedUser = normalizeUsername(data.authorizedUser || data.username);
+    if (!requestedUser || !authorizedUser || requestedUser !== authorizedUser) return null;
+    return data;
+}
+
+app.get('/keys/validate', (req, res) => {
+    const data = getActiveKey(req.query.key, req.query.user);
+    if (!data) return res.status(403).json({ ok: false, error: 'Key inválida, expirada ou revogada' });
+    res.json({ ok: true, expiresAt: data.expiresAt, authorizedUser: data.authorizedUser });
+});
+
+// Entrega o código somente para uma Key ativa. Configure SCRIPT_SOURCE_URL no Railway.
+app.get('/script', async (req, res) => {
+    const data = getActiveKey(req.query.key, req.query.user);
+    if (!data) return res.status(403).send('Key inválida, expirada ou revogada');
+    const sourceUrl = process.env.SCRIPT_SOURCE_URL || 'https://raw.githubusercontent.com/josearlindodasilva07-svg/VEX-NOTIFIER-2/refs/heads/main/Vex%20Notifier';
+    try {
+        const response = await fetch(sourceUrl, { redirect: 'follow' });
+        if (!response.ok) return res.status(502).send('Falha ao carregar o script');
+        const source = await response.text();
+        res.type('text/plain').send(source);
+    } catch (_) {
+        res.status(502).send('Falha ao carregar o script');
+    }
+});
+
+app.post('/keys/revoke', (req, res) => {
+    if (!requireKeyAdmin(req, res)) return;
+    const key = String((req.body && req.body.key) || '').trim();
+    const manual = MANUAL_KEYS.find(entry => entry && String(entry.key || '').trim() === key);
+    if (manual) {
+        manual.enabled = false;
+        return res.json({ ok: true, key, status: 'revoked', manual: true });
+    }
+    if (!keyStore[key]) return res.status(404).json({ ok: false, error: 'Key não encontrada' });
+    keyStore[key].status = 'revoked';
+    saveKeyStore();
+    res.json({ ok: true, key, status: 'revoked' });
+});
+
+app.get('/keys/list', (req, res) => {
+    if (!requireKeyAdmin(req, res)) return;
+    cleanExpiredKeys();
+    const manual = MANUAL_KEYS.map(entry => ({ ...entry, manual: true }));
+    const generated = Object.entries(keyStore).map(([key, data]) => ({ key, ...data }));
+    res.json([...manual, ...generated]);
+});
 
 let activeUsers = {};
 const blacklisted = [];
@@ -52,7 +198,7 @@ function isDuplicateSpotting(data) {
 
 // Blacklist padrAAo (jAA inclui alguns jogadores conhecidos)
 const DEFAULT_BLACKLIST = [
-    "kejshww",
+    "kakhaga",
     "kejshswh",
     // Adicione aqui os jogadores que vocAAa quer banir
 ];
