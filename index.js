@@ -266,9 +266,16 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
             
-            // Scanner Bots publicam Secrets; o Hub encaminha apenas aos usuarios.
-            if (data.type === 'spotting') {
-                ws.role = 'scanner';
+            // Qualquer VEX pode descobrir; o servidor deduplica e retransmite a todos.
+            if (data.type === 'spotting' || data.type === 'vex_discovery') {
+                const eventId = String(data.event_id || [
+                    data.job_id || '',
+                    data.raw_name || data.name || (data.pet && (data.pet.display_name || data.pet.name)) || '',
+                    data.generation || '',
+                    data.owner_username || data.owner || ''
+                ].join('|'));
+                data.type = 'vex_discovery';
+                data.event_id = eventId;
                 if (!isDuplicateSpotting(data)) {
                     latestSpotting = data;
                     broadcastToUsers(data, ws);
